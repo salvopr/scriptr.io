@@ -1,0 +1,113 @@
+/*******************************************************************
+ *	Parse used inventory data from HomeDepot and send an email with
+ *  a formatted message. This to be invoked periodically.
+ */
+var recipient = request.parameters.recipient;
+var zipcode = request.parameters.zipcode;
+
+// Store lookup first
+var storeData = findNearbyStoresByZip(zipcode);
+var htmlTable = getUsedEquipListForSales(storeData);
+return sendEmail(recipient, htmlTable);
+
+
+/*******************************************************************
+ *	Get used equip list for sale on give store id list
+ */
+function getUsedEquipListForSales(storeData) {
+  var storeIdList = storeData[0];	// used in store query
+  var storeLookup = storeData[1];	// used when preparing email
+  
+  var http = require("http");
+  var response = http.request({"url": "https://ext-tool-query.extapps.homedepot.com/used/usedInventoryApi.php", "params": {"StrNbr": storeIdList}});  
+
+  if (response.status != "200") {
+    return sendEmail(recipient, "Sorry! Error retrieving data with status " + response.status);
+  }
+ 
+  var data = JSON.parse(response.body);
+  var UsedEquipListForSales = data.UsedEquipListForSales.UsedEquipment;
+  if (UsedEquipListForSales.length <= 0) {
+    return sendEmail(recipient, "Sorry! The list for sales is empty (length=" + UsedEquipListForSales.length + ")");
+  }
+
+  // sort by ManufacturerName
+  sortJsonArrayByProperty(UsedEquipListForSales, 'SubCategoryDesc');
+
+  // parse list and generate message string
+  var htmlTable = "<table><thead><tr><th>Description</th><th>Manufacturer</th><th>Price</th><th>Store address</th></tr></thead>";
+  htmlTable += "<tbody>"
+  for (var i=0; i<UsedEquipListForSales.length; i++) {
+    var record = UsedEquipListForSales[i];
+    var d = record.SubCategoryDesc; // description
+    var m = record.ManufacturerName; // manufacturer
+    var p = record.SuggRetailPrice; // price offered on used
+    var s = record.StrNbr; // store number
+    htmlTable += "<tr><td>" + d + "</td><td>" + m + "</td><td> $" + p + "</td><td>" + storeLookup[s] + "</td></tr>";
+  }
+  htmlTable += "</tbody></table>"
+  return htmlTable;
+}
+
+/*******************************************************************
+ *	Get list stores by zip location
+ */
+function findNearbyStoresByZip(zipcode) {
+  var http = require("http");
+  var response = http.request({"url": "https://ext-tool-query.extapps.homedepot.com/used/index.php/api/store", "params": {"q":"zip", "zip": zipcode}});  
+  if (response.status != "200") {
+    return sendEmail(recipient, "Sorry! Error retrieving store list by zip code for error " + response.status);
+  }
+  var data = JSON.parse(response.body);
+  var stores = data.stores;
+  var storeIdListString = "";
+  var storeLookup = {};  // associative array through object/property
+  for (var i=0; i<stores.length; i++) {
+    var record = stores[i];
+    console.debug('record ' + record);
+    var storeId = record.storeId;
+    var address = record.address.street + ", " + record.address.city + ", " + record.address.state + " - " + record.address.zip;
+    storeIdListString += storeId + ",";
+    storeLookup[storeId] = address;
+  }
+  return [storeIdListString, storeLookup];  
+}
+
+/*******************************************************************
+ *	sendEmail as function
+ */
+function sendEmail(recipient, message) {
+  var time = new Date();
+  var mailBody = "Hello!<br>here is the latest list of used equipment for sale at your local HomeDepot stores.<br>Cheers!<br><br>" + message;
+  var emailConfig = {
+    "to": recipient,
+    "fromName": "homeDepotOffers@script.io",
+    "subject": "New Used equipment from Home Depot",
+    "body": mailBody
+  };
+  return sendMail(emailConfig.to, emailConfig.fromName, emailConfig.subject, emailConfig.body);
+}
+
+/*******************************************************************
+ *	http://stackoverflow.com/questions/4222690/sorting-a-json-object-in-javascript
+ */
+function sortJsonArrayByProperty(objArray, prop, direction){
+    if (arguments.length<2) throw new Error("sortJsonArrayByProp requires 2 arguments");
+    var direct = arguments.length>2 ? arguments[2] : 1; //Default to ascending
+
+    if (objArray && objArray.constructor===Array){
+        var propPath = (prop.constructor===Array) ? prop : prop.split(".");
+        objArray.sort(function(a,b){
+            for (var p in propPath){
+                if (a[propPath[p]] && b[propPath[p]]){
+                    a = a[propPath[p]];
+                    b = b[propPath[p]];
+                }
+            }
+            // convert numeric strings to integers
+            a = a.match(/^\d+$/) ? +a : a;
+            b = b.match(/^\d+$/) ? +b : b;
+            return ( (a < b) ? -1*direct : ((a > b) ? 1*direct : 0) );
+        });
+    }
+}
