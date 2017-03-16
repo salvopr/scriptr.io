@@ -12,7 +12,8 @@ return sendEmail(recipient, htmlTable);
 
 
 /*******************************************************************
- *	Get used equip list for sale on give store id list
+ *	Get used equip list for sale on given store id list
+    Example: https://ext-tool-query.extapps.homedepot.com/used/usedInventoryApi.php?StrNbr=1041,6672,6636,1861,6621,6635,6964,6603,0628
  */
 function getUsedEquipListForSales(storeData) {
   var storeIdList = storeData[0];	// used in store query
@@ -51,6 +52,7 @@ function getUsedEquipListForSales(storeData) {
 
 /*******************************************************************
  *	Get list stores by zip location
+    Example: https://ext-tool-query.extapps.homedepot.com/used/index.php/api/store?q=id&id=1041
  */
 function findNearbyStoresByZip(zipcode) {
   var http = require("http");
